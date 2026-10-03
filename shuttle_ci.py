@@ -195,11 +195,27 @@ def bookshuttle(user_time, source, dest, seat_number, change_date, time_window_p
 
         tomorrow = (datetime.now() + timedelta(days=1)).day
 
-        element = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable(
-                (By.XPATH, f"//span[contains(@class, 'mat-calendar-body-cell-content') and normalize-space()='{tomorrow}']")
-            )
-        )
+        # original selector first, then looser ones in case the site's calendar markup changed
+        day_xpaths = [
+            f"//span[contains(@class, 'mat-calendar-body-cell-content') and normalize-space()='{tomorrow}']",
+            f"//*[contains(@class, 'calendar-body-cell') and normalize-space()='{tomorrow}']",
+            f"//*[self::td or self::button or self::span or self::div][normalize-space(text())='{tomorrow}']",
+        ]
+        element = None
+        for xp in day_xpaths:
+            try:
+                element = WebDriverWait(driver, 8).until(EC.element_to_be_clickable((By.XPATH, xp)))
+                print("calendar day matched:", xp)
+                break
+            except Exception:
+                continue
+        if element is None:
+            os.makedirs("debug", exist_ok=True)
+            with open("debug/calendar.html", "w", encoding="utf-8") as f:
+                f.write(driver.execute_script(
+                    "var c=document.querySelector('mat-calendar,[class*=calendar]');"
+                    "return c?c.outerHTML:document.body.innerHTML.slice(0,20000);"))
+            raise Exception(f"could not find calendar day {tomorrow}; see debug/calendar.html")
 
         element.click()
         time.sleep(0.2)
