@@ -1,0 +1,40 @@
+name: Book shuttle
+run-name: "Shuttle ${{ inputs.source }} → ${{ inputs.dest }} (${{ inputs.date }} ${{ inputs.time }})"
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:   { description: "Source",      required: true }
+      dest:     { description: "Destination", required: true }
+      date:     { description: "today or tomorrow", required: true, default: "tomorrow" }
+      time:     { description: "HH:MM",       required: true }
+      before:   { description: "Minutes before (multiple of 15)", required: true, default: "30" }
+      after:    { description: "Minutes after (multiple of 15)",  required: true, default: "30" }
+      seats:    { description: "Seats (1-3)", required: true, default: "1" }
+
+jobs:
+  book:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TZ: Asia/Kolkata   # runners are UTC; "tomorrow" must be IST
+      ASHOKA_EMAIL: ${{ secrets.ASHOKA_EMAIL }}
+      ASHOKA_PASSWORD: ${{ secrets.ASHOKA_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run bot
+        env:
+          IN_SOURCE: ${{ inputs.source }}
+          IN_DEST: ${{ inputs.dest }}
+          IN_DATE: ${{ inputs.date }}
+          IN_TIME: ${{ inputs.time }}
+          IN_BEFORE: ${{ inputs.before }}
+          IN_AFTER: ${{ inputs.after }}
+          IN_SEATS: ${{ inputs.seats }}
+        run: |
+          python -u shuttle_ci.py --source "$IN_SOURCE" --dest "$IN_DEST" --date "$IN_DATE" \
+            --time "$IN_TIME" --before "$IN_BEFORE" --after "$IN_AFTER" --seats "$IN_SEATS"

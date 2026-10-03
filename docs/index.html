@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shuttle Bot</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --fg:#1b1f24; --muted:#6b7280; --accent:#2563eb; --bd:#d8dce2; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12151a; --card:#1b2027; --fg:#e8eaed; --muted:#9aa3af; --accent:#3b82f6; --bd:#2f3640; }
+  }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px system-ui,sans-serif; padding:16px; }
+  main { max-width:420px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:12px; padding:16px; margin-bottom:16px; }
+  h1 { font-size:1.3rem; margin:0 0 12px; }
+  label { display:block; font-size:.85rem; color:var(--muted); margin:12px 0 4px; }
+  select, input { width:100%; box-sizing:border-box; padding:10px; font-size:1rem; border:1px solid var(--bd);
+    border-radius:8px; background:var(--bg); color:var(--fg); }
+  .row { display:flex; gap:8px; } .row > div { flex:1; }
+  button { width:100%; margin-top:16px; padding:12px; font-size:1rem; border:0; border-radius:8px;
+    background:var(--accent); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.6; }
+  #status { font-size:1.05rem; } #status small { display:block; color:var(--muted); margin-top:6px; }
+  details summary { cursor:pointer; color:var(--muted); }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>Shuttle Bot</h1>
+    <div class="row">
+      <div><label>Source</label>
+        <select id="source"><option>Ashoka University</option><option>Azadpur</option></select></div>
+      <div><label>Destination</label>
+        <select id="dest"><option>Azadpur</option><option>Ashoka University</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>Date</label>
+        <select id="date"><option value="tomorrow">Tomorrow</option><option value="today">Today</option></select></div>
+      <div><label>Preferred time</label><input id="time" type="time" value="10:00"></div>
+    </div>
+    <div class="row">
+      <div><label>Search before (min)</label>
+        <input id="before" type="number" min="0" step="15" value="30"></div>
+      <div><label>Search after (min)</label>
+        <input id="after" type="number" min="0" step="15" value="30"></div>
+      <div><label>Seats</label>
+        <select id="seats"><option>1</option><option>2</option><option>3</option></select></div>
+    </div>
+    <button id="go">Book shuttle</button>
+  </div>
+
+  <div class="card"><div id="status">Idle.</div></div>
+
+  <div class="card">
+    <details id="settings">
+      <summary>Settings (one-time)</summary>
+      <label>GitHub repo (owner/name)</label><input id="repo" placeholder="yourname/shuttle_booker">
+      <label>GitHub token (fine-grained, Actions: read &amp; write)</label>
+      <input id="token" type="password" placeholder="github_pat_...">
+      <label>Branch</label><input id="ref" value="main">
+      <button id="save">Save (stored only in this browser)</button>
+    </details>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const WORKFLOW = "book.yml";
+const store = {
+  get(k){ try { return localStorage.getItem(k) || ""; } catch { return ""; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch {} }
+};
+for (const k of ["repo","token","ref"]) if (store.get(k)) $(k).value = store.get(k);
+if (!store.get("repo") || !store.get("token")) $("settings").open = true;
+
+$("save").onclick = () => {
+  for (const k of ["repo","token","ref"]) store.set(k, $(k).value.trim());
+  setStatus("Settings saved.");
+};
+
+const setStatus = (main, sub="") => $("status").innerHTML = main + (sub ? `<small>${sub}</small>` : "");
+const api = (path, opts={}) => fetch(`https://api.github.com/repos/${store.get("repo")}${path}`, {
+  ...opts,
+  headers: { Accept:"application/vnd.github+json", Authorization:`Bearer ${store.get("token")}`,
+             "X-GitHub-Api-Version":"2022-11-28", ...(opts.headers||{}) }
+});
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+$("go").onclick = async () => {
+  if (!store.get("repo") || !store.get("token")) { $("settings").open = true; return setStatus("Fill in settings first."); }
+  const src = $("source").value, dst = $("dest").value;
+  if (src === dst) return setStatus("Source and destination are the same.");
+  const before = +$("before").value, after = +$("after").value;
+  if (before % 15 || after % 15) return setStatus("Windows must be multiples of 15.");
+
+  const inputs = { source:src, dest:dst, date:$("date").value, time:$("time").value,
+                   before:String(before), after:String(after), seats:$("seats").value };
+  $("go").disabled = true;
+  const t0 = Date.now() - 60000;
+  try {
+    setStatus("🟡 Triggering…");
+    const r = await api(`/actions/workflows/${WORKFLOW}/dispatches`, {
+      method:"POST", body: JSON.stringify({ ref: store.get("ref") || "main", inputs })
+    });
+    if (r.status !== 204) throw new Error(`GitHub said ${r.status}: ${await r.text()}`);
+
+    let run = null;
+    for (let i = 0; i < 20 && !run; i++) {
+      await sleep(3000);
+      const d = await (await api(`/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=5`)).json();
+      run = (d.workflow_runs || []).find(x => new Date(x.created_at).getTime() >= t0);
+    }
+    if (!run) throw new Error("Triggered, but couldn't find the run. Check the Actions tab.");
+
+    while (true) {
+      run = await (await api(`/actions/runs/${run.id}`)).json();
+      const link = `<a href="${run.html_url}" target="_blank">view logs</a>`;
+      if (run.status !== "completed") {
+        setStatus(run.status === "queued" ? "🟡 Queued…" : "🟡 Running…",
+                  `${src} → ${dst} · ${inputs.date} ${inputs.time} (-${before}/+${after}) · ${link}`);
+        await sleep(5000);
+      } else if (run.conclusion === "success") {
+        return setStatus("🟢 BOOKED", link);
+      } else {
+        return setStatus(`🔴 ${run.conclusion.toUpperCase()}`, link);
+      }
+    }
+  } catch (e) {
+    setStatus("🔴 " + e.message);
+  } finally {
+    $("go").disabled = false;
+  }
+};
+</script>
+</body>
+</html>
