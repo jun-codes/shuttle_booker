@@ -20,6 +20,7 @@ jobs:
       TZ: Asia/Kolkata   # runners are UTC; "tomorrow" must be IST
       ASHOKA_EMAIL: ${{ secrets.ASHOKA_EMAIL }}
       ASHOKA_PASSWORD: ${{ secrets.ASHOKA_PASSWORD }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

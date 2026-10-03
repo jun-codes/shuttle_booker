@@ -59,6 +59,7 @@
       <label>GitHub repo (owner/name)</label><input id="repo" placeholder="yourname/shuttle_booker">
       <label>GitHub token (fine-grained, Actions: read &amp; write)</label>
       <input id="token" type="password" placeholder="github_pat_...">
+      <label>ntfy topic (same as the NTFY_TOPIC secret)</label><input id="topic" placeholder="shuttle-yourname-8f3k29xq">
       <label>Branch</label><input id="ref" value="main">
       <button id="save">Save (stored only in this browser)</button>
     </details>
@@ -72,11 +73,12 @@ const store = {
   get(k){ try { return localStorage.getItem(k) || ""; } catch { return ""; } },
   set(k,v){ try { localStorage.setItem(k,v); } catch {} }
 };
-for (const k of ["repo","token","ref"]) if (store.get(k)) $(k).value = store.get(k);
+const FIELDS = ["repo","token","ref","topic"];
+for (const k of FIELDS) if (store.get(k)) $(k).value = store.get(k);
 if (!store.get("repo") || !store.get("token")) $("settings").open = true;
 
 $("save").onclick = () => {
-  for (const k of ["repo","token","ref"]) store.set(k, $(k).value.trim());
+  for (const k of FIELDS) store.set(k, $(k).value.trim());
   setStatus("Settings saved.");
 };
 
@@ -99,6 +101,17 @@ $("go").onclick = async () => {
                    before:String(before), after:String(after), seats:$("seats").value };
   $("go").disabled = true;
   const t0 = Date.now() - 60000;
+  let es = null, notice = "";
+  const topic = store.get("topic");
+  if (topic) {
+    es = new EventSource(`https://ntfy.sh/${encodeURIComponent(topic)}/sse?since=${Math.floor(Date.now()/1000)}`);
+    es.onmessage = ev => {
+      try {
+        const m = JSON.parse(ev.data).message;
+        if (m) notice = `<div style="font-size:1.4rem;font-weight:700;margin:10px 0">📱 ${m.replace(/</g,"&lt;")}</div>`;
+      } catch {}
+    };
+  }
   try {
     setStatus("🟡 Triggering…");
     const r = await api(`/actions/workflows/${WORKFLOW}/dispatches`, {
@@ -118,7 +131,7 @@ $("go").onclick = async () => {
       run = await (await api(`/actions/runs/${run.id}`)).json();
       const link = `<a href="${run.html_url}" target="_blank">view logs</a>`;
       if (run.status !== "completed") {
-        setStatus(run.status === "queued" ? "🟡 Queued…" : "🟡 Running…",
+        setStatus((run.status === "queued" ? "🟡 Queued…" : "🟡 Running…") + notice,
                   `${src} → ${dst} · ${inputs.date} ${inputs.time} (-${before}/+${after}) · ${link}`);
         await sleep(5000);
       } else if (run.conclusion === "success") {
@@ -130,6 +143,7 @@ $("go").onclick = async () => {
   } catch (e) {
     setStatus("🔴 " + e.message);
   } finally {
+    if (es) es.close();
     $("go").disabled = false;
   }
 };

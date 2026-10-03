@@ -14,6 +14,7 @@ import time
 import os
 import sys
 import argparse
+import urllib.request
 from datetime import datetime, timedelta
 
 
@@ -68,7 +69,42 @@ next_button2 = WebDriverWait(driver, 10).until(
 
 next_button2.click()
 
-bus_booking_link = WebDriverWait(driver, 60).until(
+
+def notify(msg):
+    print(msg, flush=True)
+    topic = os.environ.get("NTFY_TOPIC")
+    if topic:
+        try:
+            req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=msg.encode(),
+                                         headers={"Title": "Shuttle bot", "Priority": "urgent"})
+            urllib.request.urlopen(req, timeout=10)
+        except Exception as e:
+            print(f"ntfy failed: {e}")
+
+
+def handle_2fa():
+    # If Google shows the "tap the number on your phone" screen, push that number to the phone.
+    end = time.time() + 15
+    while time.time() < end:
+        if driver.find_elements(By.CSS_SELECTOR, "a.bus-booking.modern-link.new-link"):
+            return
+        try:
+            lines = driver.find_element(By.TAG_NAME, "body").text.splitlines()
+        except Exception:
+            lines = []
+        nums = [l.strip() for l in lines if l.strip().isdigit() and len(l.strip()) <= 3]
+        if nums:
+            notify(f"Tap {nums[0]} on your phone to approve the Google login")
+            return
+        time.sleep(1)
+    os.makedirs("debug", exist_ok=True)
+    driver.save_screenshot("debug/2fa_unknown.png")
+    notify("Google asked for something extra; check the run logs")
+
+
+handle_2fa()
+
+bus_booking_link = WebDriverWait(driver, 180).until(
     EC.element_to_be_clickable((By.CSS_SELECTOR, "a.bus-booking.modern-link.new-link"))
 )
 bus_booking_link.click()
