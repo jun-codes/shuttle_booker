@@ -73,13 +73,15 @@ next_button2.click()
 def notify(msg):
     print(msg, flush=True)
     topic = os.environ.get("NTFY_TOPIC")
-    if topic:
-        try:
-            req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=msg.encode(),
-                                         headers={"Title": "Shuttle bot", "Priority": "urgent"})
-            urllib.request.urlopen(req, timeout=10)
-        except Exception as e:
-            print(f"ntfy failed: {e}")
+    if not topic:
+        print("NTFY_TOPIC secret is not set; nothing sent to the website")
+        return
+    try:
+        req = urllib.request.Request(f"https://ntfy.sh/{topic}", data=msg.encode(),
+                                     headers={"Title": "Shuttle bot"})
+        print("ntfy response:", urllib.request.urlopen(req, timeout=20).status, flush=True)
+    except Exception as e:
+        print(f"ntfy failed: {e}")
 
 
 def handle_2fa():
@@ -94,12 +96,11 @@ def handle_2fa():
             lines = []
         nums = [l.strip() for l in lines if l.strip().isdigit() and len(l.strip()) <= 3]
         if nums:
-            notify(f"Tap {nums[0]} on your phone to approve the Google login")
-            return
+            break
         time.sleep(1)
-    os.makedirs("debug", exist_ok=True)
-    driver.save_screenshot("debug/2fa_unknown.png")
-    notify("Google asked for something extra; check the run logs")
+    else:
+        nums = []
+    notify(f"Tap {nums[0]} on your phone" if nums else "Approve the Google login on your phone")
 
 
 handle_2fa()
