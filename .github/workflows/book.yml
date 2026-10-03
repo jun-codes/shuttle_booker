@@ -38,3 +38,10 @@ jobs:
         run: |
           python -u shuttle_ci.py --source "$IN_SOURCE" --dest "$IN_DEST" --date "$IN_DATE" \
             --time "$IN_TIME" --before "$IN_BEFORE" --after "$IN_AFTER" --seats "$IN_SEATS"
+      - name: Upload debug screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug
+          path: debug/
+          if-no-files-found: ignore

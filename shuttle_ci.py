@@ -12,6 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 import os
+import sys
 import argparse
 from datetime import datetime, timedelta
 
@@ -21,7 +22,25 @@ opts.add_argument("--headless=new")
 opts.add_argument("--no-sandbox")
 opts.add_argument("--disable-dev-shm-usage")
 opts.add_argument("--window-size=1920,1080")
+opts.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+opts.add_argument("--disable-blink-features=AutomationControlled")
 driver = webdriver.Chrome(options=opts)
+
+
+def _debug_dump(exc_type, exc, tb):
+    # On any crash, save what the browser was showing (uploaded as an artifact by the workflow)
+    try:
+        os.makedirs("debug", exist_ok=True)
+        driver.save_screenshot("debug/failure.png")
+        with open("debug/failure.txt", "w", encoding="utf-8") as f:
+            f.write(driver.current_url + "\n\n" + driver.find_element(By.TAG_NAME, "body").text)
+    except Exception:
+        pass
+    sys.__excepthook__(exc_type, exc, tb)
+
+
+sys.excepthook = _debug_dump
 driver.get('http://ashokauniversity.moveinsync.com/ASHR')
 
 
