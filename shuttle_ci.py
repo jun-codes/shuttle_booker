@@ -12,6 +12,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 import time
 import os
+import json
+import base64
 import sys
 import argparse
 import urllib.request
@@ -42,32 +44,65 @@ def _debug_dump(exc_type, exc, tb):
 
 
 sys.excepthook = _debug_dump
+BOOKING_LINK = "a.bus-booking.modern-link.new-link"
+
+
+def load_cookies():
+    # Reuse a logged-in session exported by export_cookies.py (secret MIS_COOKIES)
+    blob = os.environ.get("MIS_COOKIES")
+    if not blob:
+        print("MIS_COOKIES not set; will log in with Google")
+        return False
+    try:
+        cookies = json.loads(base64.b64decode(blob))
+        for c in cookies:
+            c = dict(c)
+            if c.get("expires", -1) in (-1, 0, None):
+                c.pop("expires", None)  # session cookie
+            driver.execute_cdp_cmd("Network.setCookie", c)
+        print(f"Loaded {len(cookies)} cookies")
+        return True
+    except Exception as e:
+        print(f"Could not load cookies: {e}")
+        return False
+
+
+def google_login():
+    email_input = WebDriverWait(driver, 10).until(
+        EC.visibility_of_element_located((By.ID, "identifierId"))
+    )
+    email_input.send_keys(os.environ["ASHOKA_EMAIL"])
+    WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.XPATH, "//span[text()='Next']"))
+    ).click()
+
+    password_input = WebDriverWait(driver, 10).until(
+        EC.visibility_of_element_located((By.NAME, "Passwd"))
+    )
+    password_input.send_keys(os.environ["ASHOKA_PASSWORD"])
+    WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.XPATH, "//span[text()='Next']"))
+    ).click()
+
+
+HOME = 'https://busgreen.moveinsync.com/bookings/#/'
+
+used_cookies = load_cookies()
+logged_in = False
 driver.get('http://ashokauniversity.moveinsync.com/ASHR')
+if used_cookies:
+    try:
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, BOOKING_LINK))
+        )
+        logged_in = True
+        print("Cookie session is valid; skipping Google login")
+    except Exception:
+        print("Cookie session rejected or expired (re-run export_cookies.py); falling back to Google login")
+        driver.get('http://ashokauniversity.moveinsync.com/ASHR')
 
-
-email_input = WebDriverWait(driver, 10).until(
-    EC.visibility_of_element_located((By.ID, "identifierId"))
-)
-
-email_input.send_keys(os.environ["ASHOKA_EMAIL"])
-
-next_button1 = WebDriverWait(driver, 10).until(
-    EC.element_to_be_clickable((By.XPATH, "//span[text()='Next']"))
-)
-
-next_button1.click()
-
-password_input = WebDriverWait(driver, 10).until(
-    EC.visibility_of_element_located((By.NAME, "Passwd"))
-)
-
-password_input.send_keys(os.environ["ASHOKA_PASSWORD"])
-
-next_button2 = WebDriverWait(driver, 10).until(
-    EC.element_to_be_clickable((By.XPATH, "//span[text()='Next']"))
-)
-
-next_button2.click()
+if not logged_in:
+    google_login()
 
 
 def notify(msg):
@@ -103,10 +138,11 @@ def handle_2fa():
     notify(f"Tap {nums[0]} on your phone" if nums else "Approve the Google login on your phone")
 
 
-handle_2fa()
+if not logged_in:
+    handle_2fa()
 
 bus_booking_link = WebDriverWait(driver, 180).until(
-    EC.element_to_be_clickable((By.CSS_SELECTOR, "a.bus-booking.modern-link.new-link"))
+    EC.element_to_be_clickable((By.CSS_SELECTOR, BOOKING_LINK))
 )
 bus_booking_link.click()
 
@@ -131,12 +167,10 @@ def bookshuttle(user_time, source, dest, seat_number, change_date, time_window_p
         time_list.append(t.strftime("%H:%M"))
 
 
-    driver.get('https://bus-neo.moveinsync.com/bookings#/')
-    time.sleep(3)
     source = source.strip()
     dest = dest.strip()
 
-    driver.get('https://busgreen.moveinsync.com/bookings/#/')
+    driver.get(HOME)
 
     WebDriverWait(driver, 10).until(
         EC.element_to_be_clickable(

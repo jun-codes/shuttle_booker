@@ -21,6 +21,7 @@ jobs:
       ASHOKA_EMAIL: ${{ secrets.ASHOKA_EMAIL }}
       ASHOKA_PASSWORD: ${{ secrets.ASHOKA_PASSWORD }}
       NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      MIS_COOKIES: ${{ secrets.MIS_COOKIES }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
